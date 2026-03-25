@@ -1,0 +1,103 @@
+employers:
+  # Priority Tier 1 (active networking contacts)
+  - name: "JPMorgan Chase"
+    workday_url: "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001"
+    keywords: ["commercial banking", "summer analyst", "intern"]
+    priority: 1
+    contacts: []
+
+  - name: "Fifth Third Bank"
+    workday_url: "[FILL IN WORKDAY URL]"
+    keywords: ["commercial banking", "summer analyst", "intern"]
+    priority: 1
+    contacts:
+      - name: "Jeffrey Baker"
+        role: "[FILL IN]"
+      - name: "Skyler Mark"
+        role: "[FILL IN]"
+
+  # Priority Tier 2 (target firms)
+  - name: "Bank of America"
+    workday_url: "[FILL IN]"
+    keywords: ["corporate banking", "summer analyst"]
+    priority: 2
+    contacts: []
+
+  - name: "Wells Fargo"
+    workday_url: "[FILL IN]"
+    keywords: ["corporate banking", "summer analyst", "intern"]
+    priority: 2
+    contacts: []
+
+  - name: "Citigroup"
+    workday_url: "[FILL IN]"
+    keywords: ["corporate banking", "summer analyst", "intern"]
+    priority: 2
+    contacts: []
+
+  - name: "U.S. Bancorp"
+    workday_url: "[FILL IN]"
+    keywords: ["commercial banking", "summer analyst", "intern"]
+    priority: 2
+    contacts: []
+
+  - name: "PNC Financial Services"
+    workday_url: "[FILL IN]"
+    keywords: ["commercial banking", "summer analyst", "intern"]
+    priority: 2
+    contacts: []
+
+  - name: "Northern Trust"
+    workday_url: "[FILL IN]"
+    keywords: ["finance intern", "summer analyst"]
+    priority: 2
+    contacts: []
+
+  - name: "BMO Harris Bank"
+    workday_url: "[FILL IN]"
+    keywords: ["commercial banking", "summer analyst", "intern"]
+    priority: 2
+    contacts: []
+
+  - name: "Wintrust Financial"
+    workday_url: "[FILL IN]"
+    keywords: ["commercial banking", "intern"]
+    priority: 2
+    contacts: []
+
+  # Consulting Tier
+  - name: "Deloitte"
+    workday_url: "[FILL IN]"
+    keywords: ["consulting intern", "summer analyst", "analyst intern"]
+    priority: 2
+    contacts: []
+
+  - name: "McKinsey"
+    workday_url: "[FILL IN]"
+    keywords: ["business analyst intern", "consulting intern"]
+    priority: 2
+    contacts: []
+
+  - name: "Boston Consulting Group"
+    workday_url: "[FILL IN]"
+    keywords: ["consulting intern", "associate intern"]
+    priority: 2
+    contacts: []
+
+  - name: "Bain and Company"
+    workday_url: "[FILL IN]"
+    keywords: ["associate consultant intern", "consulting intern"]
+    priority: 2
+    contacts: []
+
+  - name: "Accenture"
+    workday_url: "[FILL IN]"
+    keywords: ["finance consulting intern", "strategy intern"]
+    priority: 2
+    contacts: []
+
+other_portals:
+  - name: "Handshake"
+    url: "https://app.joinhandshake.com"
+    type: "handshake"
+    keywords: ["finance intern", "banking summer analyst"]

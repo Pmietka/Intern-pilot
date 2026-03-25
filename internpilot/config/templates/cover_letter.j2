@@ -1,0 +1,22 @@
+{{ date }}
+
+{{ hiring_manager_name if hiring_manager_name else "Hiring Manager" }}
+{{ company }}
+{{ company_address if company_address else "" }}
+
+Dear {{ hiring_manager_name if hiring_manager_name else "Hiring Team" }},
+
+{{ paragraph_1 }}
+
+{{ paragraph_2 }}
+
+{{ paragraph_3 }}
+
+{{ closing_paragraph }}
+
+Sincerely,
+
+{{ profile.personal.first_name }} {{ profile.personal.last_name }}
+{{ profile.personal.email }}
+{{ profile.personal.phone }}
+{{ profile.personal.linkedin }}

@@ -1,0 +1,60 @@
+# Secrets
+config/.env
+*.env
+token.json
+google_credentials.json
+credentials.json
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated outputs
+outputs/resumes/
+outputs/cover_letters/
+outputs/emails/
+outputs/screenshots/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

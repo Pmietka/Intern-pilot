@@ -1,0 +1,81 @@
+personal:
+  first_name: "Patrick"
+  last_name: "[FILL IN]"
+  email: "[FILL IN]"
+  phone: "[FILL IN]"
+  address:
+    street: "[FILL IN]"
+    city: "Chicago"
+    state: "IL"
+    zip: "[FILL IN]"
+    country: "US"
+  linkedin: "[FILL IN]"
+
+education:
+  - institution: "DePaul University"
+    degree: "Bachelor of Science"
+    major: "Finance"
+    minor: null
+    gpa: "[FILL IN]"
+    start_date: "2024-09"
+    expected_graduation: "2027-06"
+    honors:
+      - "Keeley Scholars Program"
+      - "JPMorgan Experiential Learning Project MVP"
+      - "Adventis FMC Level 2 (earned A in course)"
+    relevant_coursework:
+      - "FIN 324: Banking and Credit Analysis"
+      - "CCS 240: AI Evolution and Application"
+      - "BUS 103: Business Writing"
+      - "Intermediate Accounting"
+
+experience:
+  - title: "Founder"
+    company: "Appointly Solutions"
+    location: "Chicago, IL"
+    start_date: "2025-01"
+    end_date: "Present"
+    type: "self_employed"
+    bullets:
+      - "Built an end to end estimate booking engine for home service contractors using Meta ads, Google My Business optimization, and GoHighLevel CRM automation"
+      - "Developed automated lead generation workflows including SMS outreach sequences, booking form automation, and post booking confirmation pages with VSL integration"
+      - "Managed client acquisition campaigns for insulation contractors generating qualified leads through Meta advertising with documented case studies across four clients"
+      - "Built a national contractor database using Google Places API with SQLite caching and cost optimization for monthly free tier quota management"
+      - "Designed cold outreach copy and funnel systems to convert service business owners into recurring clients"
+
+skills:
+  technical:
+    - "Python (intermediate)"
+    - "SQL and SQLite"
+    - "GoHighLevel CRM"
+    - "Meta Ads Manager"
+    - "Google My Business Optimization"
+    - "Financial Modeling (DCF, LBO, WACC)"
+    - "Microsoft Excel (Advanced)"
+    - "n8n Workflow Automation"
+    - "API Integration"
+  soft:
+    - "Client Relationship Management"
+    - "Financial Analysis"
+    - "Credit Analysis"
+    - "Business Development"
+    - "Marketing Strategy"
+
+work_authorization:
+  authorized_to_work_in_us: true
+  require_sponsorship: false
+  willing_to_relocate: true
+
+demographics:
+  gender: "Male"
+  race_ethnicity: "White"
+  veteran_status: "No"
+  disability_status: "Prefer not to answer"
+
+screening_defaults:
+  are_you_18_or_older: true
+  have_you_worked_here_before: false
+  how_did_you_hear: "University Career Services"
+  willing_to_take_drug_test: true
+  class_year: "Sophomore"
+  expected_graduation_year: "2027"

@@ -1,0 +1,31 @@
+searches:
+  - title: "Corporate Banking Summer Analyst"
+    keywords: ["corporate banking summer analyst", "corporate banking intern"]
+    location: "Chicago, IL"
+    distance_miles: 50
+    job_type: "internship"
+    experience_level: "entry_level"
+
+  - title: "Commercial Banking Intern"
+    keywords: ["commercial banking summer analyst", "commercial banking intern"]
+    location: "Chicago, IL"
+    distance_miles: 50
+    job_type: "internship"
+
+  - title: "Finance Summer Analyst"
+    keywords: ["finance summer analyst 2027", "investment banking summer analyst"]
+    location: "United States"
+    job_type: "internship"
+
+  - title: "Consulting Intern"
+    keywords: ["management consulting intern", "consulting summer analyst"]
+    location: "Chicago, IL"
+    distance_miles: 100
+    job_type: "internship"
+
+# Global filters
+filters:
+  exclude_companies: []
+  min_match_score: 7
+  max_applications_per_day: 10
+  cooldown_days_per_company: 90
