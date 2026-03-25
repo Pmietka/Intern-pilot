@@ -2,33 +2,33 @@
 # Python 3.11+
 
 # Core
-click==8.1.7
-pyyaml==6.0.1
-python-dotenv==1.0.0
-jinja2==3.1.3
+click
+pyyaml
+python-dotenv
+jinja2
 
 # AI / LLM
-anthropic>=0.41.0
-langchain-anthropic==0.3.3
+anthropic
+langchain-anthropic
 
 # Browser automation
-browser-use==0.1.40
-playwright==1.49.0
+browser-use
+playwright
 
 # Job scraping
-python-jobspy==1.1.80
+python-jobspy
 
 # Document generation
-python-docx==1.1.0
+python-docx
 
 # Gmail / Google API
-google-api-python-client==2.153.0
-google-auth==2.35.0
-google-auth-httplib2==0.2.0
-google-auth-oauthlib==1.2.1
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
 
 # Scheduling
-apscheduler==3.10.4
+apscheduler
 
 # Utilities
-requests==2.32.3
+requests
