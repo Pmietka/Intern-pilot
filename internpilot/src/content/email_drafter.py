@@ -144,6 +144,60 @@ def save_email_draft(
     return output_path
 
 
+THANKYOU_EMAIL_PROMPT = """\
+Write a brief thank-you email after a job interview for a finance internship.
+
+RULES:
+- Never use em dashes, en dashes, or hyphens as punctuation
+- Keep it under 120 words total
+- Reference one specific topic that was discussed in the interview
+- Reiterate genuine interest in the specific role and firm
+- Professional, warm, not sycophantic
+- Sound like a real 20 year old, not an AI
+
+CANDIDATE: Patrick, Sophomore, DePaul University Keeley Scholars Program, Finance Major
+COMPANY: {company}
+ROLE: {job_title}
+INTERVIEWER NAME: {contact_name}
+INTERVIEWER TITLE: {contact_title}
+SPECIFIC TOPIC DISCUSSED: {topic_discussed}
+INTERVIEW DATE: {interview_date}
+
+Return as JSON:
+{{
+  "subject": "Thank You - {job_title} Interview",
+  "body": "..."
+}}
+"""
+
+
+def draft_thankyou_email(
+    job: Job,
+    contact_name: Optional[str] = None,
+    contact_title: Optional[str] = None,
+    topic_discussed: str = "the role and team",
+    interview_date: str = "today",
+    delay: float = 2.0,
+) -> dict:
+    """
+    Draft a post-interview thank-you email.
+
+    Returns:
+        Dict with keys: subject, body.
+    """
+    prompt = THANKYOU_EMAIL_PROMPT.format(
+        company=job.company,
+        job_title=job.title,
+        contact_name=contact_name or "Interviewer",
+        contact_title=contact_title or "not provided",
+        topic_discussed=topic_discussed,
+        interview_date=interview_date,
+    )
+    result = call_claude_json(prompt, delay=delay)
+    logger.info("Thank-you email drafted for job %d (%s)", job.id, job.company)
+    return result
+
+
 def generate_email_for_job(
     job_id: int,
     db: Database,

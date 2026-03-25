@@ -9,6 +9,10 @@ from pathlib import Path
 
 import click
 
+# Fix Windows asyncio compatibility with Playwright
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from .utils.config_loader import (
     load_env,
     load_employers,
@@ -64,10 +68,13 @@ def _run_pipeline_once(
     skip_apply: bool = False,
     skip_outreach: bool = False,
     supervised: bool = False,
+    require_review: bool = False,
     dry_run: bool = False,
 ) -> None:
-    """Execute one full pipeline: discover → score → generate → apply → outreach."""
+    """Execute one full pipeline: discover → score → generate → (review) → apply → outreach."""
     import datetime
+    from .notifications.notifier import notify
+    from .utils.config_loader import scan_for_placeholders
 
     db = get_db()
     profile = load_profile()
@@ -83,6 +90,15 @@ def _run_pipeline_once(
     if dry_run:
         click.echo("  [DRY RUN - no changes will be saved]")
     click.echo(f"{'='*60}")
+
+    # ── Pre-flight: check for unfilled profile placeholders ────
+    placeholders = scan_for_placeholders(profile)
+    if placeholders:
+        click.echo("\n[WARNING] Unfilled placeholders found in profile.yaml:", err=True)
+        for p in placeholders:
+            click.echo(f"  [!] {p}", err=True)
+        click.echo("  Applications generated from this profile may contain placeholder text.", err=True)
+        click.echo("  Run: internpilot config --validate  to see all issues.\n", err=True)
 
     # ── Step 1: Discover ───────────────────────────────────────
     click.echo("\n[1/5] Discovering jobs...")
@@ -136,13 +152,32 @@ def _run_pipeline_once(
         click.echo(f"  Content generation error: {exc}", err=True)
         logger.error("Content generation error: %s", exc)
 
-    # ── Step 4: Apply ──────────────────────────────────────────
+    # ── Step 4: Review (optional) ──────────────────────────────
+    if require_review and not skip_apply:
+        click.echo("\n[4a/5] Content review required before applying...")
+        pending = db.get_jobs_pending_review()
+        click.echo(f"  {len(pending)} job(s) awaiting review.")
+        approved = 0
+        for job in pending:
+            if _review_job_content(db, job.id):
+                db.approve_content(job.id)
+                approved += 1
+                click.echo(f"  Approved: {job.title} @ {job.company}")
+            else:
+                click.echo(f"  Skipped: {job.title} @ {job.company}")
+        click.echo(f"  Approved {approved}/{len(pending)} jobs for submission.")
+
+    # ── Step 5: Apply ──────────────────────────────────────────
     if not skip_apply:
         click.echo("\n[4/5] Applying to jobs...")
         try:
             from .applicant.workday_agent import apply_to_job
 
-            jobs_to_apply = db.get_all_jobs(status="content_generated")
+            if require_review:
+                jobs_to_apply = db.get_jobs_approved_for_apply()
+            else:
+                jobs_to_apply = db.get_all_jobs(status="content_generated")
+
             applied_today = db.count_applications_today()
             recent_companies = db.get_companies_applied_recently(cooldown_days)
             applied_count = 0
@@ -161,6 +196,10 @@ def _run_pipeline_once(
                     if success:
                         applied_count += 1
                         click.echo(f"  Applied: {job.title} @ {job.company}")
+                        notify(
+                            "InternPilot: Application Submitted",
+                            f"{job.title} @ {job.company}",
+                        )
                 except Exception as exc:
                     click.echo(f"  [Job {job.id}] Apply error: {exc}", err=True)
                     logger.error("Apply error for job %d: %s", job.id, exc)
@@ -186,9 +225,17 @@ def _run_pipeline_once(
         click.echo("\n[5/5] Outreach step skipped.")
 
     elapsed = (datetime.datetime.now() - start).seconds
+    stats = get_db().get_summary_stats()
+    summary_msg = (
+        f"Pipeline done in {elapsed}s | "
+        f"Applied: {stats.get('applied', 0)} | "
+        f"Interview: {stats.get('interview', 0)} | "
+        f"Offer: {stats.get('offer', 0)}"
+    )
     click.echo(f"\n{'='*60}")
-    click.echo(f"  Pipeline complete in {elapsed}s.")
+    click.echo(f"  {summary_msg}")
     click.echo(f"{'='*60}\n")
+    notify("InternPilot: Pipeline Complete", summary_msg)
 
 
 # ============================================================
@@ -205,17 +252,30 @@ def _run_pipeline_once(
 @click.option("--skip-apply", is_flag=True, help="Skip the Workday application step.")
 @click.option("--skip-outreach", is_flag=True, help="Skip the follow-up email step.")
 @click.option(
+    "--require-review",
+    is_flag=True,
+    help="Pause before applying each job to review generated content and confirm submission.",
+)
+@click.option(
     "--supervised/--no-supervised",
     default=False,
     help="Pause browser automation for human confirmation (default: off for automation).",
 )
 @click.option("--dry-run", is_flag=True, help="Simulate all steps without saving or submitting.")
-def run_pipeline(source: str, skip_apply: bool, skip_outreach: bool, supervised: bool, dry_run: bool):
+def run_pipeline(
+    source: str,
+    skip_apply: bool,
+    skip_outreach: bool,
+    require_review: bool,
+    supervised: bool,
+    dry_run: bool,
+):
     """Run the full pipeline in one command: discover → score → generate → apply → outreach."""
     _run_pipeline_once(
         source=source,
         skip_apply=skip_apply,
         skip_outreach=skip_outreach,
+        require_review=require_review,
         supervised=supervised,
         dry_run=dry_run,
     )
@@ -246,7 +306,13 @@ def run_pipeline(source: str, skip_apply: bool, skip_outreach: bool, supervised:
     type=click.Choice(["all", "linkedin", "indeed", "glassdoor", "ziprecruiter", "google"], case_sensitive=False),
     help="Job board to scrape during each discovery run.",
 )
-@click.option("--skip-apply", is_flag=True, help="Skip the Workday application step.")
+@click.option(
+    "--apply",
+    "enable_apply",
+    is_flag=True,
+    default=False,
+    help="Enable the application step. Disabled by default in schedule mode for safety.",
+)
 @click.option("--skip-outreach", is_flag=True, help="Skip the follow-up email step.")
 @click.option(
     "--supervised/--no-supervised",
@@ -259,13 +325,17 @@ def schedule(
     run_time: str,
     interval: int,
     source: str,
-    skip_apply: bool,
+    enable_apply: bool,
     skip_outreach: bool,
     supervised: bool,
     dry_run: bool,
     run_now: bool,
 ):
-    """Run the full pipeline automatically on a schedule (runs until Ctrl+C)."""
+    """Run the full pipeline automatically on a schedule (runs until Ctrl+C).
+
+    Apply is DISABLED by default in schedule mode. Pass --apply to enable it,
+    or use 'internpilot review' + 'internpilot apply --batch' for safer manual control.
+    """
     try:
         from apscheduler.schedulers.blocking import BlockingScheduler
     except ImportError:
@@ -275,7 +345,7 @@ def schedule(
     def _job():
         _run_pipeline_once(
             source=source,
-            skip_apply=skip_apply,
+            skip_apply=not enable_apply,
             skip_outreach=skip_outreach,
             supervised=supervised,
             dry_run=dry_run,
@@ -305,6 +375,220 @@ def schedule(
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         click.echo("\nScheduler stopped.")
+
+
+# ============================================================
+# REVIEW HELPER
+# ============================================================
+
+def _review_job_content(db, job_id: int) -> bool:
+    """
+    Show generated content for a job and prompt the user to approve or skip.
+    Returns True if approved, False if skipped.
+    """
+    job = db.get_job(job_id)
+    if not job:
+        click.echo(f"Job {job_id} not found.", err=True)
+        return False
+
+    app = db.get_application(job_id)
+    outreaches = db.get_outreach_for_job(job_id)
+
+    click.echo(f"\n{'='*65}")
+    click.echo(f"  JOB {job_id}: {job.title}")
+    click.echo(f"  Company: {job.company}  |  Score: {job.match_score}/10")
+    click.echo(f"  URL: {job.url}")
+    click.echo(f"{'='*65}")
+
+    if app and app.resume_path:
+        click.echo(f"\n  Resume:       {app.resume_path}")
+    if app and app.cover_letter_path and Path(app.cover_letter_path).exists():
+        click.echo(f"\n--- Cover Letter Preview ---")
+        try:
+            content = Path(app.cover_letter_path).read_text(encoding="utf-8")
+            click.echo(content[:1200] + ("..." if len(content) > 1200 else ""))
+        except Exception:
+            click.echo(f"  (see {app.cover_letter_path})")
+
+    if outreaches:
+        o = outreaches[0]
+        click.echo(f"\n--- Recruiter Email Draft ---")
+        click.echo(f"Subject: {o.email_subject or '(none)'}")
+        click.echo(o.email_body or "(no body)")
+
+    click.echo(f"\n{'='*65}")
+    response = click.prompt(
+        "Decision [y=approve & queue for apply / n=skip / q=quit review session]",
+        type=click.Choice(["y", "n", "q"], case_sensitive=False),
+        default="n",
+    )
+    if response.lower() == "q":
+        raise SystemExit(0)
+    return response.lower() == "y"
+
+
+# ============================================================
+# REVIEW  (interactive content review before applying)
+# ============================================================
+
+@cli.command("review")
+@click.option("--job-id", type=int, default=None, help="Review a specific job only.")
+def review(job_id: int):
+    """Review generated content job-by-job and approve for submission.
+
+    Transitions approved jobs to 'content_approved' status so they can be
+    submitted with 'internpilot apply --batch' or 'internpilot run --require-review'.
+    """
+    db = get_db()
+
+    if job_id:
+        jobs = [db.get_job(job_id)] if db.get_job(job_id) else []
+    else:
+        jobs = db.get_jobs_pending_review()
+
+    if not jobs:
+        click.echo("No jobs pending review. Run 'internpilot generate --all' first.")
+        return
+
+    click.echo(f"\n{len(jobs)} job(s) to review. Press Ctrl+C to stop at any time.\n")
+    approved_count = 0
+    for job in jobs:
+        try:
+            approved = _review_job_content(db, job.id)
+            if approved:
+                db.approve_content(job.id)
+                approved_count += 1
+        except (KeyboardInterrupt, SystemExit):
+            break
+
+    click.echo(f"\nReview complete. {approved_count}/{len(jobs)} approved.")
+    click.echo("Run 'internpilot apply --batch' to submit approved applications.")
+
+
+# ============================================================
+# OUTCOME  (track interview / offer / rejected outcomes)
+# ============================================================
+
+@cli.command("outcome")
+@click.option("--job-id", type=int, required=True, help="Job ID to update.")
+@click.option(
+    "--status",
+    type=click.Choice(["interview", "offer", "rejected"], case_sensitive=False),
+    required=True,
+    help="Outcome to record.",
+)
+@click.option("--stage", default=None, help="Interview stage (e.g. phone_screen, superday, final).")
+@click.option("--date", "outcome_date", default=None, help="Date of event (YYYY-MM-DD).")
+@click.option("--notes", default=None, help="Optional notes about the outcome.")
+def outcome(job_id: int, status: str, stage: str, outcome_date: str, notes: str):
+    """Record an outcome for a job: interview, offer, or rejection."""
+    db = get_db()
+    job = db.get_job(job_id)
+    if not job:
+        click.echo(f"Job {job_id} not found.", err=True)
+        sys.exit(1)
+
+    db.update_job_status(job_id, status.lower())
+    if stage or outcome_date:
+        db.update_interview_stage(job_id, stage or status, interview_date=outcome_date)
+
+    click.echo(f"Updated job {job_id} ({job.title} @ {job.company}): status = {status}")
+    if notes:
+        click.echo(f"Notes: {notes}")
+
+    # Suggest thank-you email on interview
+    if status.lower() == "interview":
+        click.echo(
+            f"\nTip: Run 'internpilot thankyou --job-id {job_id}' to draft a thank-you email."
+        )
+
+
+# ============================================================
+# THANKYOU  (post-interview thank-you email)
+# ============================================================
+
+@cli.command("thankyou")
+@click.option("--job-id", type=int, required=True, help="Job ID.")
+@click.option("--contact-name", default=None, help="Interviewer name.")
+@click.option("--contact-title", default=None, help="Interviewer title.")
+@click.option(
+    "--topic",
+    default="the role and team",
+    help="Specific topic discussed in the interview to reference.",
+)
+@click.option("--date", "interview_date", default="today", help="Date of interview.")
+@click.option("--dry-run", is_flag=True, help="Preview without saving.")
+def thankyou(job_id: int, contact_name: str, contact_title: str, topic: str, interview_date: str, dry_run: bool):
+    """Draft a post-interview thank-you email."""
+    db = get_db()
+    job = db.get_job(job_id)
+    if not job:
+        click.echo(f"Job {job_id} not found.", err=True)
+        sys.exit(1)
+
+    from .content.email_drafter import draft_thankyou_email, save_email_draft
+
+    email_data = draft_thankyou_email(
+        job,
+        contact_name=contact_name,
+        contact_title=contact_title,
+        topic_discussed=topic,
+        interview_date=interview_date,
+    )
+
+    click.echo(f"\nSubject: {email_data.get('subject', '')}")
+    click.echo(f"\n{email_data.get('body', '')}")
+
+    if not dry_run:
+        path = save_email_draft(email_data, job, email_type="thankyou")
+        click.echo(f"\nSaved to: {path}")
+
+
+# ============================================================
+# CONTACTS  (find recruiter contacts via Hunter.io)
+# ============================================================
+
+@cli.command("contacts")
+@click.option("--job-id", type=int, default=None, help="Find contacts for a specific job.")
+@click.option("--company", default=None, help="Company name to search directly.")
+@click.option("--domain", default=None, help="Known email domain (e.g. jpmorgan.com).")
+@click.option("--limit", default=5, show_default=True, help="Max contacts to return.")
+def contacts(job_id: int, company: str, domain: str, limit: int):
+    """Find recruiter contacts at a company using Hunter.io (requires HUNTER_API_KEY)."""
+    from .outreach.contact_finder import find_recruiter_contacts
+
+    if job_id:
+        db = get_db()
+        job = db.get_job(job_id)
+        if not job:
+            click.echo(f"Job {job_id} not found.", err=True)
+            sys.exit(1)
+        company = job.company
+
+    if not company:
+        click.echo("Provide --job-id or --company.", err=True)
+        sys.exit(1)
+
+    click.echo(f"Searching for recruiter contacts at {company}...")
+    results = find_recruiter_contacts(company, domain=domain, limit=limit)
+
+    if not results:
+        click.echo("No contacts found. Make sure HUNTER_API_KEY is set in config/.env.")
+        return
+
+    click.echo(f"\nFound {len(results)} contact(s):\n")
+    click.echo(f"{'Name':<25} {'Title':<30} {'Email':<35} {'Confidence'}")
+    click.echo("-" * 100)
+    for c in results:
+        click.echo(
+            f"{c['name']:<25} {c.get('title',''):<30} {c['email']:<35} {c.get('confidence', 0)}%"
+        )
+
+    if job_id:
+        click.echo(
+            f"\nTo send outreach: internpilot outreach --job-id {job_id} "
+            f"--contact-name \"NAME\" --contact-email EMAIL"
+        )
 
 
 # ============================================================

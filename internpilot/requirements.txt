@@ -32,3 +32,6 @@ apscheduler
 
 # Utilities
 requests
+
+# Desktop notifications (optional — graceful fallback if not installed)
+plyer

@@ -18,16 +18,22 @@ logger = logging.getLogger(__name__)
 OUTPUTS_DIR = Path(__file__).resolve().parents[2] / "outputs" / "resumes"
 
 RESUME_TAILOR_PROMPT = """\
-You are a finance career advisor at a top university. Rewrite this candidate's resume bullets to be maximally relevant for the target job.
+You are a finance career services advisor at a top-10 business school. Rewrite this candidate's resume to maximize relevance for the target job while strictly following investment banking and finance recruiting conventions.
 
-RULES:
-- NEVER fabricate experience, metrics, or skills the candidate does not have
-- Reorder bullets to put the most relevant experience first
-- Mirror keywords from the job description naturally (for ATS optimization)
-- Quantify impact wherever the existing data supports it
-- Keep each bullet to one line, starting with a strong action verb
-- Do NOT use em dashes, en dashes, or hyphens as punctuation. Use commas or restructure sentences instead.
-- The tone should be professional but not robotic
+FINANCE RESUME RULES (non-negotiable):
+- ONE PAGE maximum. No exceptions.
+- NO objective statement or professional summary unless the role specifically calls for one.
+- Reverse chronological order within each section.
+- GPA: include ONLY if 3.50 or above. If below 3.50, omit entirely. Never round up.
+- Every bullet must start with a strong past-tense action verb (Built, Analyzed, Developed, Led, Generated, Reduced, Increased, Managed, Designed, etc.)
+- Quantify EVERY bullet if the data exists. Use $, %, X times, or specific numbers.
+- Bullets must be one line. Never wrap. Trim ruthlessly.
+- Do NOT use em dashes, en dashes, or hyphens as punctuation. Use commas or restructure.
+- Do NOT use first-person pronouns (I, me, my).
+- Standard sections in order: Education, Experience, Leadership/Activities (if applicable), Skills.
+- Skills section: list technical skills only (software, languages, certifications). No soft skills.
+- Mirror keywords from the job description naturally for ATS, but do not keyword-stuff.
+- NEVER fabricate experience, metrics, or skills the candidate does not have.
 
 CANDIDATE RESUME FACTS:
 {resume_facts_from_profile}
@@ -39,7 +45,7 @@ Description: {job_description}
 
 Return the rewritten resume content as JSON:
 {{
-  "summary": "<optional 1 to 2 sentence professional summary if appropriate>",
+  "summary": null,
   "experience": [
     {{
       "title": "...",
@@ -50,7 +56,7 @@ Return the rewritten resume content as JSON:
     }}
   ],
   "skills_section": ["skill1", "skill2"],
-  "reordered_coursework": ["most relevant course"]
+  "reordered_coursework": ["most relevant course first"]
 }}
 """
 

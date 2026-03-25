@@ -82,14 +82,33 @@ class Database:
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        """Create tables if they do not exist."""
+        """Create tables if they do not exist, then apply migrations."""
         try:
             with self._conn() as conn:
                 conn.executescript(DDL)
+            self._migrate()
             logger.debug("Database schema ready at %s", self.db_path)
         except sqlite3.Error as exc:
             logger.error("Failed to initialize database schema: %s", exc)
             raise
+
+    def _migrate(self) -> None:
+        """Apply non-destructive schema migrations for existing databases."""
+        migrations = [
+            # Add content_approved flag for review gate
+            "ALTER TABLE jobs ADD COLUMN content_approved BOOLEAN DEFAULT FALSE",
+            # Add interview stage tracking
+            "ALTER TABLE jobs ADD COLUMN interview_stage TEXT",
+            "ALTER TABLE jobs ADD COLUMN interview_date TEXT",
+            # Add outcome notes
+            "ALTER TABLE applications ADD COLUMN outcome_notes TEXT",
+        ]
+        with self._conn() as conn:
+            for sql in migrations:
+                try:
+                    conn.execute(sql)
+                except sqlite3.OperationalError:
+                    pass  # Column already exists — safe to ignore
 
     @contextmanager
     def _conn(self) -> Generator[sqlite3.Connection, None, None]:
@@ -197,6 +216,49 @@ class Database:
                 "UPDATE jobs SET status = ? WHERE id = ?", (status, job_id)
             )
         logger.info("Updated job %d status to %s", job_id, status)
+
+    def approve_content(self, job_id: int) -> None:
+        """Mark a job's generated content as reviewed and approved for submission."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE jobs SET content_approved = TRUE WHERE id = ?", (job_id,)
+            )
+        logger.info("Content approved for job %d", job_id)
+
+    def get_jobs_pending_review(self) -> list[Job]:
+        """Return jobs with generated content that have not yet been approved."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM jobs
+                WHERE status = 'content_generated'
+                  AND (content_approved IS NULL OR content_approved = FALSE)
+                ORDER BY match_score DESC
+                """
+            ).fetchall()
+            return [Job.from_row(dict(r)) for r in rows]
+
+    def get_jobs_approved_for_apply(self) -> list[Job]:
+        """Return jobs where content has been reviewed and approved."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM jobs
+                WHERE status = 'content_generated'
+                  AND content_approved = TRUE
+                ORDER BY match_score DESC
+                """
+            ).fetchall()
+            return [Job.from_row(dict(r)) for r in rows]
+
+    def update_interview_stage(self, job_id: int, stage: str, interview_date: Optional[str] = None) -> None:
+        """Record an interview stage for a job (e.g. 'phone_screen', 'superday', 'final')."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE jobs SET interview_stage = ?, interview_date = ? WHERE id = ?",
+                (stage, interview_date, job_id),
+            )
+        logger.info("Updated interview stage for job %d: %s", job_id, stage)
 
     def update_job_workday_portal(self, job_id: int, portal_url: str) -> None:
         with self._conn() as conn:

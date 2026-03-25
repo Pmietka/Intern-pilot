@@ -93,6 +93,24 @@ def get_google_token_path() -> Path:
     return Path(path_str)
 
 
+def scan_for_placeholders(data, path: str = "") -> list[str]:
+    """
+    Recursively scan a config dict/list for unfilled [FILL IN] placeholders.
+    Returns a list of dot-paths where placeholders were found.
+    """
+    found = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            child_path = f"{path}.{key}" if path else key
+            found.extend(scan_for_placeholders(value, child_path))
+    elif isinstance(data, list):
+        for i, item in enumerate(data):
+            found.extend(scan_for_placeholders(item, f"{path}[{i}]"))
+    elif isinstance(data, str) and "[FILL IN]" in data:
+        found.append(path)
+    return found
+
+
 def validate_configs() -> list[str]:
     """
     Validate all YAML config files and env vars.
@@ -100,19 +118,15 @@ def validate_configs() -> list[str]:
     """
     issues = []
 
-    # Profile
+    # Profile — deep scan for any remaining [FILL IN] placeholders
     try:
         profile = load_profile()
-        p = profile.get("personal", {})
-        for field in ["first_name", "last_name", "email", "phone"]:
-            val = p.get(field, "")
-            if not val or "[FILL IN]" in str(val):
-                issues.append(f"profile.yaml: personal.{field} needs to be filled in")
-        edus = profile.get("education", [])
-        if not edus:
+        placeholders = scan_for_placeholders(profile)
+        for p in placeholders:
+            issues.append(f"profile.yaml: {p} still has [FILL IN] placeholder")
+        if not profile.get("education"):
             issues.append("profile.yaml: no education entries found")
-        exps = profile.get("experience", [])
-        if not exps:
+        if not profile.get("experience"):
             issues.append("profile.yaml: no experience entries found")
     except Exception as exc:
         issues.append(f"profile.yaml: failed to load ({exc})")
