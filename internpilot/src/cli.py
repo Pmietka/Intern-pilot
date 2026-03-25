@@ -56,6 +56,258 @@ def cli():
 
 
 # ============================================================
+# PIPELINE HELPER (shared by `run` and `schedule`)
+# ============================================================
+
+def _run_pipeline_once(
+    source: str = "all",
+    skip_apply: bool = False,
+    skip_outreach: bool = False,
+    supervised: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Execute one full pipeline: discover → score → generate → apply → outreach."""
+    import datetime
+
+    db = get_db()
+    profile = load_profile()
+    searches_config = load_searches()
+    filters = searches_config.get("filters", {})
+    min_score = filters.get("min_match_score", 7)
+    max_per_day = filters.get("max_applications_per_day", 10)
+    cooldown_days = filters.get("cooldown_days_per_company", 90)
+
+    start = datetime.datetime.now()
+    click.echo(f"\n{'='*60}")
+    click.echo(f"  InternPilot Pipeline  |  {start:%Y-%m-%d %H:%M:%S}")
+    if dry_run:
+        click.echo("  [DRY RUN - no changes will be saved]")
+    click.echo(f"{'='*60}")
+
+    # ── Step 1: Discover ───────────────────────────────────────
+    click.echo("\n[1/5] Discovering jobs...")
+    searches = searches_config.get("searches", [])
+    if searches:
+        try:
+            from .discovery.scraper import scrape_jobs
+            total = scrape_jobs(searches, db, source=source, dry_run=dry_run)
+            click.echo(f"  New jobs found: {total}")
+        except Exception as exc:
+            click.echo(f"  Discovery error: {exc}", err=True)
+            logger.error("Discovery error: %s", exc)
+    else:
+        click.echo("  No searches configured, skipping.")
+
+    # ── Step 2: Score ──────────────────────────────────────────
+    click.echo("\n[2/5] Scoring unscored jobs...")
+    try:
+        from .scoring.matcher import score_all_unscored
+        scored = score_all_unscored(db, profile, dry_run=dry_run)
+        click.echo(f"  Jobs scored: {scored}")
+    except Exception as exc:
+        click.echo(f"  Scoring error: {exc}", err=True)
+        logger.error("Scoring error: %s", exc)
+
+    # ── Step 3: Generate content ───────────────────────────────
+    click.echo("\n[3/5] Generating application content...")
+    try:
+        from .content.resume_tailor import generate_resume_for_job
+        from .content.cover_letter import generate_cover_letter_for_job
+        from .content.email_drafter import generate_email_for_job
+
+        all_scored = db.get_jobs_by_min_score(min_score)
+        pending_gen = [j for j in all_scored if j.status == "scored"]
+        click.echo(f"  Jobs needing content: {len(pending_gen)}")
+        gen_ok = 0
+        for job in pending_gen:
+            jid = job.id
+            try:
+                generate_resume_for_job(jid, db, profile, dry_run=dry_run)
+                generate_cover_letter_for_job(jid, db, profile, dry_run=dry_run)
+                generate_email_for_job(jid, db, dry_run=dry_run)
+                if not dry_run:
+                    db.update_job_status(jid, "content_generated")
+                gen_ok += 1
+            except Exception as exc:
+                click.echo(f"  [Job {jid}] Generate error: {exc}", err=True)
+                logger.error("Generate error for job %d: %s", jid, exc)
+        click.echo(f"  Content generated: {gen_ok}/{len(pending_gen)}")
+    except Exception as exc:
+        click.echo(f"  Content generation error: {exc}", err=True)
+        logger.error("Content generation error: %s", exc)
+
+    # ── Step 4: Apply ──────────────────────────────────────────
+    if not skip_apply:
+        click.echo("\n[4/5] Applying to jobs...")
+        try:
+            from .applicant.workday_agent import apply_to_job
+
+            jobs_to_apply = db.get_all_jobs(status="content_generated")
+            applied_today = db.count_applications_today()
+            recent_companies = db.get_companies_applied_recently(cooldown_days)
+            applied_count = 0
+
+            for job in jobs_to_apply:
+                if applied_today + applied_count >= max_per_day:
+                    click.echo(f"  Daily limit ({max_per_day}) reached.")
+                    break
+                if job.company in recent_companies:
+                    click.echo(f"  Skipping {job.company} (cooldown active).")
+                    continue
+                try:
+                    success = asyncio.run(
+                        apply_to_job(job.id, db, profile, supervised=supervised, dry_run=dry_run)
+                    )
+                    if success:
+                        applied_count += 1
+                        click.echo(f"  Applied: {job.title} @ {job.company}")
+                except Exception as exc:
+                    click.echo(f"  [Job {job.id}] Apply error: {exc}", err=True)
+                    logger.error("Apply error for job %d: %s", job.id, exc)
+
+            click.echo(f"  Applications submitted: {applied_count}")
+        except Exception as exc:
+            click.echo(f"  Apply step error: {exc}", err=True)
+            logger.error("Apply step error: %s", exc)
+    else:
+        click.echo("\n[4/5] Apply step skipped.")
+
+    # ── Step 5: Outreach follow-ups ────────────────────────────
+    if not skip_outreach:
+        click.echo("\n[5/5] Sending due follow-up emails...")
+        try:
+            from .outreach.scheduler import send_due_followups
+            fu_count = send_due_followups(db, profile, dry_run=dry_run)
+            click.echo(f"  Follow-ups sent: {fu_count}")
+        except Exception as exc:
+            click.echo(f"  Outreach error: {exc}", err=True)
+            logger.error("Outreach error: %s", exc)
+    else:
+        click.echo("\n[5/5] Outreach step skipped.")
+
+    elapsed = (datetime.datetime.now() - start).seconds
+    click.echo(f"\n{'='*60}")
+    click.echo(f"  Pipeline complete in {elapsed}s.")
+    click.echo(f"{'='*60}\n")
+
+
+# ============================================================
+# RUN  (one-shot full pipeline)
+# ============================================================
+
+@cli.command("run")
+@click.option(
+    "--source",
+    default="all",
+    type=click.Choice(["all", "linkedin", "indeed", "glassdoor", "ziprecruiter", "google"], case_sensitive=False),
+    help="Job board to scrape during discovery.",
+)
+@click.option("--skip-apply", is_flag=True, help="Skip the Workday application step.")
+@click.option("--skip-outreach", is_flag=True, help="Skip the follow-up email step.")
+@click.option(
+    "--supervised/--no-supervised",
+    default=False,
+    help="Pause browser automation for human confirmation (default: off for automation).",
+)
+@click.option("--dry-run", is_flag=True, help="Simulate all steps without saving or submitting.")
+def run_pipeline(source: str, skip_apply: bool, skip_outreach: bool, supervised: bool, dry_run: bool):
+    """Run the full pipeline in one command: discover → score → generate → apply → outreach."""
+    _run_pipeline_once(
+        source=source,
+        skip_apply=skip_apply,
+        skip_outreach=skip_outreach,
+        supervised=supervised,
+        dry_run=dry_run,
+    )
+
+
+# ============================================================
+# SCHEDULE  (recurring automated pipeline)
+# ============================================================
+
+@cli.command("schedule")
+@click.option(
+    "--time",
+    "run_time",
+    default="08:00",
+    help="Daily run time in HH:MM (24-hour). Default: 08:00.",
+    show_default=True,
+)
+@click.option(
+    "--interval",
+    type=int,
+    default=None,
+    metavar="HOURS",
+    help="Run every N hours instead of once per day at a fixed time.",
+)
+@click.option(
+    "--source",
+    default="all",
+    type=click.Choice(["all", "linkedin", "indeed", "glassdoor", "ziprecruiter", "google"], case_sensitive=False),
+    help="Job board to scrape during each discovery run.",
+)
+@click.option("--skip-apply", is_flag=True, help="Skip the Workday application step.")
+@click.option("--skip-outreach", is_flag=True, help="Skip the follow-up email step.")
+@click.option(
+    "--supervised/--no-supervised",
+    default=False,
+    help="Pause browser automation for human confirmation.",
+)
+@click.option("--dry-run", is_flag=True, help="Simulate all steps without saving or submitting.")
+@click.option("--run-now", is_flag=True, help="Run the pipeline immediately on start, then follow the schedule.")
+def schedule(
+    run_time: str,
+    interval: int,
+    source: str,
+    skip_apply: bool,
+    skip_outreach: bool,
+    supervised: bool,
+    dry_run: bool,
+    run_now: bool,
+):
+    """Run the full pipeline automatically on a schedule (runs until Ctrl+C)."""
+    try:
+        from apscheduler.schedulers.blocking import BlockingScheduler
+    except ImportError:
+        click.echo("APScheduler is required: pip install apscheduler", err=True)
+        sys.exit(1)
+
+    def _job():
+        _run_pipeline_once(
+            source=source,
+            skip_apply=skip_apply,
+            skip_outreach=skip_outreach,
+            supervised=supervised,
+            dry_run=dry_run,
+        )
+
+    scheduler = BlockingScheduler(timezone="America/Chicago")
+
+    if interval:
+        scheduler.add_job(_job, "interval", hours=interval)
+        click.echo(f"Scheduler started: pipeline runs every {interval} hour(s).")
+    else:
+        try:
+            hour, minute = map(int, run_time.split(":"))
+        except ValueError:
+            click.echo(f"Invalid --time value '{run_time}'. Use HH:MM format.", err=True)
+            sys.exit(1)
+        scheduler.add_job(_job, "cron", hour=hour, minute=minute)
+        click.echo(f"Scheduler started: pipeline runs daily at {run_time}.")
+
+    click.echo("Press Ctrl+C to stop.\n")
+
+    if run_now:
+        click.echo("Running pipeline now before entering schedule loop...")
+        _job()
+
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        click.echo("\nScheduler stopped.")
+
+
+# ============================================================
 # DISCOVER
 # ============================================================
 
