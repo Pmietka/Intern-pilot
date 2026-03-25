@@ -32,7 +32,7 @@ A production-grade Python CLI that automates the finance internship application 
 ### 1. Clone and create a virtual environment
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Pmietka/Intern-pilot.git
 cd internpilot
 python -m venv venv
 
