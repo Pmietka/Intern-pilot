@@ -33,7 +33,7 @@ A production-grade Python CLI that automates the finance internship application 
 
 ```bash
 git clone https://github.com/Pmietka/Intern-pilot.git
-cd internpilot
+cd intern-pilot
 python -m venv venv
 
 # Windows
